@@ -8,13 +8,14 @@
       :root {
         --bg: #0b1020;
         --panel: rgba(10, 18, 32, 0.62);
-        --panel-strong: rgba(12, 24, 42, 0.8);
+        --panel-strong: rgba(12, 24, 42, 0.9);
         --border: rgba(160, 200, 255, 0.22);
         --text: #eaf3ff;
         --title: #9ee7ff;
         --accent: #7ce7ff;
         --good: #a6ffc7;
         --danger: #ff9ab4;
+        --warning: #ffd77b;
         --shadow: rgba(0, 0, 0, 0.32);
       }
 
@@ -51,7 +52,7 @@
         user-select: none;
         pointer-events: none;
         z-index: 12;
-        max-width: min(90vw, 420px);
+        max-width: min(90vw, 620px);
       }
 
       #title {
@@ -96,7 +97,7 @@
       }
 
       .panel {
-        width: min(92vw, 540px);
+        width: min(92vw, 560px);
         background: rgba(12, 24, 42, 0.9);
         border: 1px solid rgba(160, 200, 255, 0.22);
         border-radius: 18px;
@@ -280,7 +281,7 @@
   <body>
     <div id="hud">
       <div id="title">Crystal Dash</div>
-      <div id="stats">Score: <span id="score">0</span> / <span id="total">0</span> &nbsp;|&nbsp; Time: <span id="time">60</span>s</div>
+      <div id="stats">Score: <span id="score">0</span> / <span id="total">0</span> &nbsp;|&nbsp; Time: <span id="time">60</span>s &nbsp;|&nbsp; Lives: <span id="lives">3</span> &nbsp;|&nbsp; Boss: <span id="bossHp">0</span></div>
       <div id="message">Collect all crystals. Click the game to lock the mouse.</div>
     </div>
 
@@ -288,14 +289,13 @@
       <div class="panel">
         <h1>Crystal Dash</h1>
         <p>
-          Explore the glowing maze, collect every crystal, and beat the clock.
-          Use WASD or the on-screen controls to move, and move the mouse to aim your view.
+          Defeat the crystal guardian, dodge the sentries, and survive the maze. Gather all crystals while the boss patrols the arena and the hazard fields pulse in the dark.
         </p>
         <div class="button-row">
           <button id="startButton">Start Game</button>
           <button id="restartButton" class="small" style="display:none;">Restart</button>
         </div>
-        <div class="status-pill">60 second challenge</div>
+        <div class="status-pill">Boss battle mode</div>
       </div>
     </div>
 
@@ -325,13 +325,16 @@
         score: 0,
         timeLeft: 60,
         totalCrystals: 0,
-        gameOver: false,
+        lives: 3,
+        bossHp: 0,
       };
 
       const ui = {
         score: document.getElementById("score"),
         total: document.getElementById("total"),
         time: document.getElementById("time"),
+        lives: document.getElementById("lives"),
+        bossHp: document.getElementById("bossHp"),
         message: document.getElementById("message"),
         overlay: document.getElementById("startOverlay"),
         startButton: document.getElementById("startButton"),
@@ -359,6 +362,10 @@
 
       const worldHalf = 18;
       const walls = [];
+      const enemies = [];
+      const hazards = [];
+      let crystals = [];
+      let boss = null;
 
       const ground = new THREE.Mesh(
         new THREE.PlaneGeometry(80, 80),
@@ -400,12 +407,15 @@
         [0, 10, 1.2, 10],
         [-14, 0, 1.2, 8],
         [14, 0, 1.2, 8],
-      ].forEach(([x, z, w, d]) => addWall(x, z, w, d, 2.6));
+      ].forEach(([x, z, w, d]) => addWall(x, z, w, d, 2.8));
 
+      const playerSpawn = new THREE.Vector3(0, 0.8, 11);
       const player = {
-        position: new THREE.Vector3(0, 0.8, 11),
+        position: playerSpawn.clone(),
         radius: 0.8,
         speed: 9.5,
+        lives: 3,
+        invuln: 0,
       };
 
       const playerMesh = new THREE.Mesh(
@@ -430,7 +440,6 @@
       const yaw = { value: 0 };
       const clock = new THREE.Clock();
       let startTimestamp = 0;
-      let crystals = [];
 
       function setKeyState(key, active) {
         const k = key.toLowerCase();
@@ -503,9 +512,140 @@
         ui.total.textContent = String(state.totalCrystals);
       }
 
+      function createEnemy(x, z, radius, speed, color = 0xff5d7a) {
+        const body = new THREE.Mesh(
+          new THREE.SphereGeometry(0.8, 18, 18),
+          new THREE.MeshStandardMaterial({
+            color,
+            emissive: color,
+            emissiveIntensity: 0.5,
+            metalness: 0.25,
+            roughness: 0.35,
+          })
+        );
+        body.position.set(x, 1.0, z);
+        scene.add(body);
+
+        const eye = new THREE.PointLight(color, 1.0, 7, 2);
+        eye.position.copy(body.position);
+        scene.add(eye);
+
+        const enemy = {
+          mesh: body,
+          light: eye,
+          radius,
+          speed,
+          angle: Math.random() * Math.PI * 2,
+          cx: x,
+          cz: z,
+          phase: Math.random() * Math.PI * 2,
+        };
+        enemies.push(enemy);
+      }
+
+      function createHazard(x, z, radius = 1.2) {
+        const hazard = new THREE.Mesh(
+          new THREE.CylinderGeometry(radius, radius, 0.8, 18),
+          new THREE.MeshStandardMaterial({
+            color: 0xff6a6a,
+            emissive: 0xff3d3d,
+            emissiveIntensity: 0.8,
+            metalness: 0.2,
+            roughness: 0.4,
+          })
+        );
+        hazard.rotation.x = Math.PI / 2;
+        hazard.position.set(x, 0.45, z);
+        scene.add(hazard);
+
+        const glow = new THREE.PointLight(0xff5d7a, 1.5, 9, 2);
+        glow.position.set(x, 1.2, z);
+        scene.add(glow);
+
+        hazards.push({ mesh: hazard, glow, radius, angle: Math.random() * Math.PI * 2 });
+      }
+
+      function createBoss() {
+        if (boss) {
+          scene.remove(boss.mesh);
+          scene.remove(boss.ring);
+          scene.remove(boss.light);
+        }
+
+        const mesh = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(1.4, 0),
+          new THREE.MeshStandardMaterial({
+            color: 0xff7b9c,
+            emissive: 0xff4d88,
+            emissiveIntensity: 1.1,
+            metalness: 0.5,
+            roughness: 0.3,
+          })
+        );
+        mesh.position.set(0, 2.2, -7);
+        scene.add(mesh);
+
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(2.2, 0.18, 18, 80),
+          new THREE.MeshStandardMaterial({
+            color: 0xffd77b,
+            emissive: 0xffbb3d,
+            emissiveIntensity: 1.3,
+            metalness: 0.8,
+            roughness: 0.2,
+          })
+        );
+        ring.position.set(0, 2.2, -7);
+        ring.rotation.x = Math.PI / 2;
+        scene.add(ring);
+
+        const light = new THREE.PointLight(0xff4d88, 2.4, 18, 2);
+        light.position.copy(mesh.position);
+        scene.add(light);
+
+        boss = {
+          mesh,
+          ring,
+          light,
+          hp: 8,
+          maxHp: 8,
+          radius: 2.6,
+          angle: 0,
+          phase: 0,
+        };
+        state.bossHp = boss.hp;
+      }
+
+      function buildArena() {
+        enemies.forEach((enemy) => {
+          scene.remove(enemy.mesh);
+          scene.remove(enemy.light);
+        });
+        hazards.forEach((hazard) => {
+          scene.remove(hazard.mesh);
+          scene.remove(hazard.glow);
+        });
+        enemies.length = 0;
+        hazards.length = 0;
+
+        createEnemy(-8, 12, 4.0, 1.4);
+        createEnemy(9, -12, 4.8, 1.2, 0xffb35c);
+        createEnemy(-11, -2, 3.2, 1.7);
+        createEnemy(12, 6, 5.0, 1.5, 0xff6ad9);
+
+        createHazard(-7, -5, 1.0);
+        createHazard(8, 8, 1.0);
+        createHazard(0, 3.5, 1.2);
+        createHazard(-12, 2, 1.0);
+
+        createBoss();
+      }
+
       function updateHud() {
         ui.score.textContent = String(state.score);
         ui.time.textContent = String(Math.ceil(state.timeLeft));
+        ui.lives.textContent = String(player.lives);
+        ui.bossHp.textContent = String(state.bossHp);
       }
 
       function setMessage(html) {
@@ -532,7 +672,32 @@
         return false;
       }
 
+      function takeHit() {
+        if (player.invuln > 0 || state.mode !== "playing") return;
+
+        player.lives -= 1;
+        player.invuln = 1.6;
+        soundManager.play("hit");
+        updateHud();
+
+        if (player.lives <= 0) {
+          state.mode = "ended";
+          setMessage("<strong>YOU DIED!</strong> The maze defeated you.");
+          ui.restartButton.style.display = "inline-block";
+          ui.overlay.classList.remove("hidden");
+          ui.startButton.textContent = "Play Again";
+          soundManager.play("lose");
+          return;
+        }
+
+        player.position.copy(playerSpawn);
+        playerMesh.position.copy(player.position);
+        setMessage("<strong>Ouch!</strong> Keep moving and stay sharp.");
+      }
+
       function updatePlayer(delta) {
+        if (player.invuln > 0) player.invuln = Math.max(0, player.invuln - delta);
+
         let moveX = 0;
         let moveZ = 0;
 
@@ -560,22 +725,11 @@
         }
 
         playerMesh.position.copy(player.position);
-      }
-
-      function onCrystalCollected(crystal) {
-        crystal.collected = true;
-        crystal.mesh.visible = false;
-        crystal.glow.visible = false;
-        state.score += 1;
-        updateHud();
-        soundManager.play("collect");
-
-        if (state.score >= state.totalCrystals) {
-          state.mode = "ended";
-          setMessage("<strong>YOU WIN!</strong> Everything is collected.");
-          ui.restartButton.style.display = "inline-block";
-          ui.overlay.classList.remove("hidden");
-          ui.startButton.textContent = "Play Again";
+        if (player.invuln > 0) {
+          const flicker = Math.floor(player.invuln * 18) % 2 === 0;
+          playerMesh.visible = flicker;
+        } else {
+          playerMesh.visible = true;
         }
       }
 
@@ -588,7 +742,85 @@
           crystal.glow.intensity = 1.0 + Math.sin(elapsed * 8 + crystal.mesh.position.x) * 0.8;
 
           if (player.position.distanceTo(crystal.mesh.position) < 1.2) {
-            onCrystalCollected(crystal);
+            crystal.collected = true;
+            crystal.mesh.visible = false;
+            crystal.glow.visible = false;
+            state.score += 1;
+            updateHud();
+            soundManager.play("collect");
+
+            if (state.score >= state.totalCrystals) {
+              if (boss && boss.hp > 0) {
+                setMessage("<strong>Guardian awakened!</strong> Defeat the boss to finish the run.");
+              }
+            }
+          }
+        }
+      }
+
+      function updateEnemies(delta) {
+        for (const enemy of enemies) {
+          enemy.angle += delta * enemy.speed;
+          const x = enemy.cx + Math.cos(enemy.angle) * enemy.radius;
+          const z = enemy.cz + Math.sin(enemy.angle) * enemy.radius;
+          enemy.mesh.position.set(x, 1.0 + Math.sin((enemy.angle + enemy.phase) * 2.5) * 0.25, z);
+          enemy.mesh.rotation.y += delta * 3.5;
+          enemy.light.position.copy(enemy.mesh.position);
+
+          if (player.position.distanceTo(enemy.mesh.position) < 1.3) {
+            takeHit();
+          }
+        }
+      }
+
+      function updateHazards(delta) {
+        for (const hazard of hazards) {
+          hazard.angle += delta * 2.6;
+          hazard.mesh.rotation.z += delta * 2.8;
+          hazard.glow.intensity = 1.2 + Math.sin(hazard.angle * 4.0) * 0.8;
+
+          const safeDist = hazard.radius + player.radius + 0.25;
+          if (player.position.distanceTo(hazard.mesh.position) < safeDist) {
+            takeHit();
+          }
+        }
+      }
+
+      function updateBoss(delta, elapsed) {
+        if (!boss || state.mode !== "playing") return;
+
+        boss.angle += delta * 1.3;
+        const orbitX = Math.cos(boss.angle) * 6.6;
+        const orbitZ = Math.sin(boss.angle) * 4.2 - 7;
+        boss.mesh.position.set(orbitX, 2.2 + Math.sin(elapsed * 5.5) * 0.5, orbitZ);
+        boss.ring.position.copy(boss.mesh.position);
+        boss.ring.rotation.z += delta * 1.4;
+        boss.ring.rotation.x = Math.PI / 2;
+        boss.light.position.copy(boss.mesh.position);
+        boss.mesh.rotation.x += delta * 2.2;
+        boss.mesh.rotation.y += delta * 2.4;
+
+        if (player.position.distanceTo(boss.mesh.position) < 1.9) {
+          takeHit();
+        }
+
+        if (state.score >= state.totalCrystals) {
+          const dist = player.position.distanceTo(boss.mesh.position);
+          if (dist < 2.8) {
+            boss.hp -= 1;
+            state.bossHp = boss.hp;
+            soundManager.play("hit");
+            updateHud();
+            setMessage("<strong>Critical hit!</strong> The guardian is wounded.");
+
+            if (boss.hp <= 0) {
+              state.mode = "ended";
+              setMessage("<strong>VICTORY!</strong> The crystal guardian is defeated.");
+              ui.restartButton.style.display = "inline-block";
+              ui.overlay.classList.remove("hidden");
+              ui.startButton.textContent = "Play Again";
+              soundManager.play("win");
+            }
           }
         }
       }
@@ -597,27 +829,21 @@
         state.mode = "playing";
         state.score = 0;
         state.timeLeft = 60;
-        state.gameOver = false;
-        startTimestamp = performance.now();
-        player.position.set(0, 0.8, 11);
+        player.lives = 3;
+        player.invuln = 0;
+        player.position.copy(playerSpawn);
         playerMesh.position.copy(player.position);
         yaw.value = 0;
 
         resetCrystals();
+        buildArena();
+        setMessage("Collect all crystals. The guardian awakens when you gather them.");
         updateHud();
-        setMessage("Collect all crystals. Click the game to lock the mouse.");
         ui.restartButton.style.display = "none";
         ui.overlay.classList.add("hidden");
         ui.startButton.textContent = "Start Game";
+        startTimestamp = performance.now();
         renderer.domElement.requestPointerLock?.();
-      }
-
-      function endGame(reason) {
-        state.mode = "ended";
-        setMessage(reason);
-        ui.restartButton.style.display = "inline-block";
-        ui.overlay.classList.remove("hidden");
-        ui.startButton.textContent = "Play Again";
       }
 
       ui.startButton.addEventListener("click", () => {
@@ -640,7 +866,6 @@
           }
         },
         play: (tone) => {
-          if (state.mode !== "playing") return;
           try {
             soundManager.ensure();
             const ctx = soundManager.ctx;
@@ -650,12 +875,14 @@
             gain.connect(ctx.destination);
 
             const settings = {
-              collect: { freq: 820, duration: 0.09, type: "triangle", volume: 0.04 },
-              win: { freq: 460, duration: 0.2, type: "sine", volume: 0.06 },
+              collect: { freq: 820, duration: 0.09, type: "triangle", volume: 0.05 },
+              win: { freq: 460, duration: 0.22, type: "sine", volume: 0.06 },
               lose: { freq: 170, duration: 0.25, type: "sawtooth", volume: 0.05 },
+              hit: { freq: 140, duration: 0.16, type: "square", volume: 0.04 },
             };
 
             const s = settings[tone];
+            if (!s) return;
             osc.type = s.type;
             osc.frequency.setValueAtTime(s.freq, ctx.currentTime);
             gain.gain.setValueAtTime(0.0001, ctx.currentTime);
@@ -679,8 +906,11 @@
 
           updatePlayer(delta);
           updateCrystals(delta, elapsed);
+          updateEnemies(delta);
+          updateHazards(delta);
+          updateBoss(delta, elapsed);
 
-          if (state.timeLeft <= 0) {
+          if (state.timeLeft <= 0 && state.mode === "playing") {
             state.mode = "ended";
             setMessage("<strong>TIME'S UP!</strong> Collect more crystals next time.");
             ui.restartButton.style.display = "inline-block";
@@ -819,6 +1049,7 @@
       ui.total.textContent = String(crystalPositions.length);
       updateHud();
       resetCrystals();
+      buildArena();
       animate();
     </script>
   </body>
