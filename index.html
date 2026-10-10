@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Crystal Dash 3D</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --panel: rgba(10, 18, 32, 0.62);
+        --panel-strong: rgba(12, 24, 42, 0.8);
+        --border: rgba(160, 200, 255, 0.22);
+        --text: #eaf3ff;
+        --title: #9ee7ff;
+        --accent: #7ce7ff;
+        --good: #a6ffc7;
+        --danger: #ff9ab4;
+        --shadow: rgba(0, 0, 0, 0.32);
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Arial, Helvetica, sans-serif;
+        touch-action: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        cursor: crosshair;
+      }
+
+      #hud {
+        position: absolute;
+        top: 18px;
+        left: 18px;
+        padding: 12px 16px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+        user-select: none;
+        pointer-events: none;
+        z-index: 12;
+        max-width: min(90vw, 420px);
+      }
+
+      #title {
+        font-size: clamp(18px, 2vw, 24px);
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        margin-bottom: 6px;
+        color: var(--title);
+      }
+
+      #stats {
+        font-size: clamp(13px, 1.6vw, 16px);
+        margin-bottom: 2px;
+      }
+
+      #message {
+        font-size: clamp(11px, 1.3vw, 13px);
+        color: #d4e9ff;
+        opacity: 0.94;
+        line-height: 1.35;
+      }
+
+      #message strong {
+        color: var(--good);
+      }
+
+      .overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(8, 13, 24, 0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 30;
+        backdrop-filter: blur(3px);
+        transition: opacity 0.25s ease;
+      }
+
+      .overlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .panel {
+        width: min(92vw, 540px);
+        background: rgba(12, 24, 42, 0.9);
+        border: 1px solid rgba(160, 200, 255, 0.22);
+        border-radius: 18px;
+        box-shadow: 0 16px 42px rgba(0, 0, 0, 0.38);
+        padding: 24px 24px 18px;
+      }
+
+      .panel h1 {
+        margin: 0 0 8px;
+        font-size: clamp(26px, 5vw, 42px);
+        letter-spacing: 0.08em;
+        color: var(--title);
+        text-transform: uppercase;
+      }
+
+      .panel p {
+        margin: 0 0 18px;
+        color: #dfeeff;
+        line-height: 1.5;
+      }
+
+      .button-row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      button {
+        appearance: none;
+        border: 1px solid rgba(158, 231, 255, 0.45);
+        background: linear-gradient(180deg, rgba(26, 43, 68, 0.92), rgba(17, 29, 48, 0.9));
+        color: white;
+        padding: 12px 18px;
+        border-radius: 12px;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 10px 24px rgba(0,0,0,0.2);
+      }
+
+      button:active {
+        transform: translateY(1px);
+      }
+
+      .small {
+        font-size: 13px;
+        opacity: 0.9;
+      }
+
+      #mobileControls {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 25;
+        display: none;
+      }
+
+      .touch-panel {
+        position: absolute;
+        left: 18px;
+        bottom: 24px;
+        width: 156px;
+        height: 156px;
+        pointer-events: auto;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.02);
+      }
+
+      .touch-pad {
+        position: absolute;
+        inset: 12px;
+        border-radius: 50%;
+        background: rgba(120, 170, 255, 0.08);
+        border: 1px solid rgba(160, 200, 255, 0.18);
+        box-shadow: inset 0 0 20px rgba(0,0,0,0.18);
+      }
+
+      .touch-knob {
+        position: absolute;
+        width: 52px;
+        height: 52px;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        background: rgba(126, 202, 255, 0.30);
+        border: 2px solid rgba(158, 231, 255, 0.55);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+        pointer-events: none;
+        transition: transform 0.05s linear;
+      }
+
+      .touch-btns {
+        position: absolute;
+        right: 18px;
+        bottom: 22px;
+        width: 180px;
+        height: 180px;
+        pointer-events: auto;
+      }
+
+      .look-zone {
+        position: absolute;
+        inset: 0;
+        border-radius: 18px;
+        background: rgba(255,255,255,0.02);
+        border: 1px solid rgba(160, 200, 255, 0.14);
+        box-shadow: inset 0 0 18px rgba(0,0,0,0.18);
+      }
+
+      .dpad {
+        position: absolute;
+        left: 12px;
+        top: 12px;
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: repeat(3, 1fr);
+        gap: 6px;
+        pointer-events: none;
+      }
+
+      .dir-btn {
+        border: 1px solid rgba(158, 231, 255, 0.38);
+        background: rgba(26, 43, 68, 0.68);
+        color: white;
+        border-radius: 12px;
+        user-select: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        font-weight: bold;
+        touch-action: none;
+        pointer-events: auto;
+      }
+
+      .dir-btn:active {
+        background: rgba(82, 140, 200, 0.70);
+      }
+
+      .dir-btn.up { grid-column: 2; grid-row: 1; }
+      .dir-btn.left { grid-column: 1; grid-row: 2; }
+      .dir-btn.right { grid-column: 3; grid-row: 2; }
+      .dir-btn.down { grid-column: 2; grid-row: 3; }
+
+      .status-pill {
+        display: inline-block;
+        margin-top: 10px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(124, 231, 255, 0.08);
+        border: 1px solid rgba(124, 231, 255, 0.2);
+        color: #dfeeff;
+        font-size: 12px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      @media (max-width: 768px) {
+        #hud {
+          top: 12px;
+          left: 12px;
+          right: 12px;
+          padding: 10px 12px;
+        }
+
+        #mobileControls {
+          display: block;
+        }
+
+        canvas {
+          cursor: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hud">
+      <div id="title">Crystal Dash</div>
+      <div id="stats">Score: <span id="score">0</span> / <span id="total">0</span> &nbsp;|&nbsp; Time: <span id="time">60</span>s</div>
+      <div id="message">Collect all crystals. Click the game to lock the mouse.</div>
+    </div>
+
+    <div id="startOverlay" class="overlay">
+      <div class="panel">
+        <h1>Crystal Dash</h1>
+        <p>
+          Explore the glowing maze, collect every crystal, and beat the clock.
+          Use WASD or the on-screen controls to move, and move the mouse to aim your view.
+        </p>
+        <div class="button-row">
+          <button id="startButton">Start Game</button>
+          <button id="restartButton" class="small" style="display:none;">Restart</button>
+        </div>
+        <div class="status-pill">60 second challenge</div>
+      </div>
+    </div>
+
+    <div id="mobileControls">
+      <div class="touch-panel">
+        <div class="touch-pad" id="touchPad">
+          <div class="touch-knob" id="touchKnob"></div>
+        </div>
+      </div>
+
+      <div class="touch-btns">
+        <div class="look-zone" id="lookZone"></div>
+        <div class="dpad">
+          <div class="dir-btn up" data-key="w">▲</div>
+          <div class="dir-btn left" data-key="a">◀</div>
+          <div class="dir-btn right" data-key="d">▶</div>
+          <div class="dir-btn down" data-key="s">▼</div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js";
+
+      const state = {
+        mode: "menu",
+        score: 0,
+        timeLeft: 60,
+        totalCrystals: 0,
+        gameOver: false,
+      };
+
+      const ui = {
+        score: document.getElementById("score"),
+        total: document.getElementById("total"),
+        time: document.getElementById("time"),
+        message: document.getElementById("message"),
+        overlay: document.getElementById("startOverlay"),
+        startButton: document.getElementById("startButton"),
+        restartButton: document.getElementById("restartButton"),
+      };
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0b1020);
+      scene.fog = new THREE.Fog(0x0b1020, 12, 80);
+
+      const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+      camera.position.set(0, 5, 12);
+
+      const hemi = new THREE.HemisphereLight(0xdfe9ff, 0x1b2431, 1.25);
+      scene.add(hemi);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+      dirLight.position.set(12, 18, 8);
+      scene.add(dirLight);
+
+      const worldHalf = 18;
+      const walls = [];
+
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(80, 80),
+        new THREE.MeshStandardMaterial({ color: 0x273549, roughness: 0.96, metalness: 0.08 })
+      );
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = 0;
+      scene.add(ground);
+
+      const wallMat = new THREE.MeshStandardMaterial({
+        color: 0x54708f,
+        roughness: 0.8,
+        metalness: 0.22,
+      });
+
+      function addWall(x, z, w, d, h = 2.6) {
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+        wall.position.set(x, h / 2, z);
+        scene.add(wall);
+        walls.push({ x, z, w, d, h });
+      }
+
+      addWall(0, -worldHalf, 40, 1, 3.4);
+      addWall(0, worldHalf, 40, 1, 3.4);
+      addWall(-worldHalf, 0, 1, 40, 3.4);
+      addWall(worldHalf, 0, 1, 40, 3.4);
+
+      [
+        [-8, -8, 7, 1.2],
+        [8, -10, 8, 1.2],
+        [-10, 8, 8, 1.2],
+        [10, 9, 7, 1.2],
+        [0, 0, 1.2, 9],
+        [-5, 2, 1.2, 9],
+        [5, -2, 1.2, 9],
+        [-8, 0, 10, 1.2],
+        [8, 0, 10, 1.2],
+        [0, -10, 1.2, 10],
+        [0, 10, 1.2, 10],
+        [-14, 0, 1.2, 8],
+        [14, 0, 1.2, 8],
+      ].forEach(([x, z, w, d]) => addWall(x, z, w, d, 2.6));
+
+      const player = {
+        position: new THREE.Vector3(0, 0.8, 11),
+        radius: 0.8,
+        speed: 9.5,
+      };
+
+      const playerMesh = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.6, 1.2, 4, 8),
+        new THREE.MeshStandardMaterial({
+          color: 0x6fe1ff,
+          emissive: 0x123b55,
+          metalness: 0.3,
+          roughness: 0.4,
+        })
+      );
+      playerMesh.position.copy(player.position);
+      scene.add(playerMesh);
+
+      const input = {
+        forward: false,
+        backward: false,
+        left: false,
+        right: false,
+      };
+
+      const yaw = { value: 0 };
+      const clock = new THREE.Clock();
+      let startTimestamp = 0;
+      let crystals = [];
+
+      function setKeyState(key, active) {
+        const k = key.toLowerCase();
+        if (k === "w") input.forward = active;
+        if (k === "s") input.backward = active;
+        if (k === "a") input.left = active;
+        if (k === "d") input.right = active;
+      }
+
+      window.addEventListener("keydown", (e) => {
+        setKeyState(e.key, true);
+      });
+
+      window.addEventListener("keyup", (e) => {
+        setKeyState(e.key, false);
+      });
+
+      renderer.domElement.addEventListener("click", () => {
+        if (state.mode === "playing") {
+          renderer.domElement.requestPointerLock();
+        }
+      });
+
+      document.addEventListener("mousemove", (e) => {
+        if (document.pointerLockElement === renderer.domElement && state.mode === "playing") {
+          yaw.value -= e.movementX * 0.0024;
+        }
+      });
+
+      const crystalPositions = [
+        [-13, -12],
+        [13, -10],
+        [-12, 12],
+        [13, 11],
+        [0, -4],
+        [-4, 3],
+        [7, -2],
+        [-7, -7],
+        [0, 12],
+        [-10, 0],
+      ];
+
+      const crystalMat = new THREE.MeshStandardMaterial({
+        color: 0x7ce7ff,
+        emissive: 0x1bb8ff,
+        emissiveIntensity: 0.8,
+        metalness: 0.3,
+        roughness: 0.2,
+      });
+
+      function createCrystal(x, z) {
+        const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), crystalMat);
+        crystal.position.set(x, 1.15, z);
+        scene.add(crystal);
+
+        const glow = new THREE.PointLight(0x66d9ff, 1.1, 8, 2);
+        glow.position.copy(crystal.position);
+        scene.add(glow);
+
+        return { mesh: crystal, glow, collected: false };
+      }
+
+      function resetCrystals() {
+        crystals.forEach((crystal) => {
+          scene.remove(crystal.mesh);
+          scene.remove(crystal.glow);
+        });
+        crystals = crystalPositions.map(([x, z]) => createCrystal(x, z));
+        state.totalCrystals = crystals.length;
+        ui.total.textContent = String(state.totalCrystals);
+      }
+
+      function updateHud() {
+        ui.score.textContent = String(state.score);
+        ui.time.textContent = String(Math.ceil(state.timeLeft));
+      }
+
+      function setMessage(html) {
+        ui.message.innerHTML = html;
+      }
+
+      function collidesAt(pos) {
+        const r = player.radius;
+
+        if (Math.abs(pos.x) > worldHalf - 0.8 || Math.abs(pos.z) > worldHalf - 0.8) {
+          return true;
+        }
+
+        for (const wall of walls) {
+          const closestX = Math.max(wall.x - wall.w / 2, Math.min(pos.x, wall.x + wall.w / 2));
+          const closestZ = Math.max(wall.z - wall.d / 2, Math.min(pos.z, wall.z + wall.d / 2));
+          const dx = pos.x - closestX;
+          const dz = pos.z - closestZ;
+          if (dx * dx + dz * dz < r * r) {
+            return true;
+          }
+        }
+
+        return false;
+      }
+
+      function updatePlayer(delta) {
+        let moveX = 0;
+        let moveZ = 0;
+
+        if (input.forward) moveZ += 1;
+        if (input.backward) moveZ -= 1;
+        if (input.left) moveX -= 1;
+        if (input.right) moveX += 1;
+
+        if (moveX !== 0 || moveZ !== 0) {
+          const len = Math.hypot(moveX, moveZ);
+          moveX /= len;
+          moveZ /= len;
+
+          const forward = new THREE.Vector3(Math.sin(yaw.value), 0, Math.cos(yaw.value));
+          const right = new THREE.Vector3(forward.z, 0, -forward.x);
+          const desired = forward.clone().multiplyScalar(moveZ).add(right.clone().multiplyScalar(moveX));
+
+          if (desired.lengthSq() > 0) {
+            desired.normalize();
+            const nextPos = player.position.clone().add(desired.multiplyScalar(player.speed * delta));
+            if (!collidesAt(nextPos)) {
+              player.position.copy(nextPos);
+            }
+          }
+        }
+
+        playerMesh.position.copy(player.position);
+      }
+
+      function onCrystalCollected(crystal) {
+        crystal.collected = true;
+        crystal.mesh.visible = false;
+        crystal.glow.visible = false;
+        state.score += 1;
+        updateHud();
+        soundManager.play("collect");
+
+        if (state.score >= state.totalCrystals) {
+          state.mode = "ended";
+          setMessage("<strong>YOU WIN!</strong> Everything is collected.");
+          ui.restartButton.style.display = "inline-block";
+          ui.overlay.classList.remove("hidden");
+          ui.startButton.textContent = "Play Again";
+        }
+      }
+
+      function updateCrystals(delta, elapsed) {
+        for (const crystal of crystals) {
+          if (crystal.collected) continue;
+
+          crystal.mesh.rotation.y += delta * 2.2;
+          crystal.mesh.rotation.x += delta * 2.7;
+          crystal.glow.intensity = 1.0 + Math.sin(elapsed * 8 + crystal.mesh.position.x) * 0.8;
+
+          if (player.position.distanceTo(crystal.mesh.position) < 1.2) {
+            onCrystalCollected(crystal);
+          }
+        }
+      }
+
+      function startGame() {
+        state.mode = "playing";
+        state.score = 0;
+        state.timeLeft = 60;
+        state.gameOver = false;
+        startTimestamp = performance.now();
+        player.position.set(0, 0.8, 11);
+        playerMesh.position.copy(player.position);
+        yaw.value = 0;
+
+        resetCrystals();
+        updateHud();
+        setMessage("Collect all crystals. Click the game to lock the mouse.");
+        ui.restartButton.style.display = "none";
+        ui.overlay.classList.add("hidden");
+        ui.startButton.textContent = "Start Game";
+        renderer.domElement.requestPointerLock?.();
+      }
+
+      function endGame(reason) {
+        state.mode = "ended";
+        setMessage(reason);
+        ui.restartButton.style.display = "inline-block";
+        ui.overlay.classList.remove("hidden");
+        ui.startButton.textContent = "Play Again";
+      }
+
+      ui.startButton.addEventListener("click", () => {
+        startGame();
+      });
+
+      ui.restartButton.addEventListener("click", () => {
+        startGame();
+      });
+
+      const soundManager = {
+        ctx: null,
+        ensure: () => {
+          if (!soundManager.ctx) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            soundManager.ctx = new AudioCtx();
+          }
+          if (soundManager.ctx.state === "suspended") {
+            soundManager.ctx.resume();
+          }
+        },
+        play: (tone) => {
+          if (state.mode !== "playing") return;
+          try {
+            soundManager.ensure();
+            const ctx = soundManager.ctx;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            const settings = {
+              collect: { freq: 820, duration: 0.09, type: "triangle", volume: 0.04 },
+              win: { freq: 460, duration: 0.2, type: "sine", volume: 0.06 },
+              lose: { freq: 170, duration: 0.25, type: "sawtooth", volume: 0.05 },
+            };
+
+            const s = settings[tone];
+            osc.type = s.type;
+            osc.frequency.setValueAtTime(s.freq, ctx.currentTime);
+            gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(s.volume, ctx.currentTime + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + s.duration);
+            osc.start();
+            osc.stop(ctx.currentTime + s.duration);
+          } catch (_) {
+            // ignore browser audio restrictions
+          }
+        },
+      };
+
+      function animate() {
+        const delta = Math.min(clock.getDelta(), 0.033);
+        const elapsed = clock.elapsedTime;
+
+        if (state.mode === "playing") {
+          state.timeLeft = Math.max(0, 60 - (performance.now() - startTimestamp) / 1000);
+          updateHud();
+
+          updatePlayer(delta);
+          updateCrystals(delta, elapsed);
+
+          if (state.timeLeft <= 0) {
+            state.mode = "ended";
+            setMessage("<strong>TIME'S UP!</strong> Collect more crystals next time.");
+            ui.restartButton.style.display = "inline-block";
+            ui.overlay.classList.remove("hidden");
+            ui.startButton.textContent = "Play Again";
+            soundManager.play("lose");
+          }
+        }
+
+        const cameraOffset = new THREE.Vector3(Math.sin(yaw.value) * 7.5, 4.5, Math.cos(yaw.value) * 7.5);
+        const desiredCameraPos = player.position.clone().add(cameraOffset);
+        camera.position.lerp(desiredCameraPos, 0.12);
+
+        const lookTarget = player.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+        camera.lookAt(lookTarget);
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+      }
+
+      // Mobile controls
+      const isMobile = window.matchMedia("(max-width: 768px)").matches;
+      const touchPad = document.getElementById("touchPad");
+      const touchKnob = document.getElementById("touchKnob");
+      const lookZone = document.getElementById("lookZone");
+      const dirButtons = document.querySelectorAll(".dir-btn");
+
+      let moveTouchId = null;
+      let lookTouchId = null;
+
+      function updateTouchKnob(dx, dy) {
+        const maxDist = 42;
+        const dist = Math.min(Math.hypot(dx, dy), maxDist);
+        const angle = Math.atan2(dy, dx);
+        const px = Math.cos(angle) * dist;
+        const py = Math.sin(angle) * dist;
+
+        touchKnob.style.transform = `translate(${px - 26}px, ${py - 26}px)`;
+
+        const nx = Math.max(-1, Math.min(1, dx / maxDist));
+        const ny = Math.max(-1, Math.min(1, dy / maxDist));
+
+        input.left = nx < -0.25;
+        input.right = nx > 0.25;
+        input.forward = ny < -0.25;
+        input.backward = ny > 0.25;
+      }
+
+      function resetTouchPad() {
+        touchKnob.style.transform = "translate(-50%, -50%)";
+        input.forward = false;
+        input.backward = false;
+        input.left = false;
+        input.right = false;
+      }
+
+      function readPadTouch(touch) {
+        const rect = touchPad.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        return {
+          dx: touch.clientX - centerX,
+          dy: touch.clientY - centerY,
+        };
+      }
+
+      if (isMobile) {
+        touchPad.addEventListener("touchstart", (e) => {
+          const touch = e.touches[0];
+          moveTouchId = touch.identifier;
+          const { dx, dy } = readPadTouch(touch);
+          updateTouchKnob(dx, dy);
+        }, { passive: true });
+
+        touchPad.addEventListener("touchmove", (e) => {
+          for (const touch of e.touches) {
+            if (touch.identifier === moveTouchId) {
+              const { dx, dy } = readPadTouch(touch);
+              updateTouchKnob(dx, dy);
+              break;
+            }
+          }
+        }, { passive: true });
+
+        touchPad.addEventListener("touchend", () => {
+          moveTouchId = null;
+          resetTouchPad();
+        });
+
+        touchPad.addEventListener("touchcancel", () => {
+          moveTouchId = null;
+          resetTouchPad();
+        });
+
+        lookZone.addEventListener("touchstart", (e) => {
+          lookTouchId = e.touches[0].identifier;
+        }, { passive: true });
+
+        lookZone.addEventListener("touchmove", (e) => {
+          for (const touch of e.touches) {
+            if (touch.identifier === lookTouchId) {
+              const rect = lookZone.getBoundingClientRect();
+              const centerX = rect.left + rect.width / 2;
+              const dx = touch.clientX - centerX;
+              yaw.value -= dx * 0.003;
+              break;
+            }
+          }
+        }, { passive: true });
+
+        lookZone.addEventListener("touchend", () => {
+          lookTouchId = null;
+        });
+
+        lookZone.addEventListener("touchcancel", () => {
+          lookTouchId = null;
+        });
+      }
+
+      dirButtons.forEach((button) => {
+        const key = button.dataset.key;
+
+        const set = (active) => {
+          setKeyState(key, active);
+        };
+
+        button.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          set(true);
+        });
+        button.addEventListener("pointerup", () => set(false));
+        button.addEventListener("pointerleave", () => set(false));
+        button.addEventListener("pointercancel", () => set(false));
+      });
+
+      ui.total.textContent = String(crystalPositions.length);
+      updateHud();
+      resetCrystals();
+      animate();
+    </script>
+  </body>
+</html>
